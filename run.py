@@ -10,45 +10,54 @@ def main():
     parser.add_argument("--output", required=True, help="Sti til predictions.json")
     args = parser.parse_args()
 
-    # 1. Last modellen (denne må hete 'best.pt' og ligge i samme mappe)
+    # 1. Last modellen
     model_path = Path("best.pt")
     if not model_path.exists():
-        # Fallback for testing hvis best.pt ikke er klar
-        model_path = Path("yolov8x.pt") 
+        # Fallback til Large eller X hvis best.pt ikke finnes
+        model_path = Path("yolov8l.pt")
+        if not model_path.exists():
+            model_path = Path("yolov8x.pt")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # Map_location håndteres automatisk av Ultralytics
     model = YOLO(str(model_path))
     
     predictions = []
 
-    # 2. Gå gjennom alle bildene i input-mappen
     input_path = Path(args.input)
     if not input_path.exists():
         return
 
+    # 2. Kjør prediksjon
+    # Vi bruker imgsz=1024 for å balansere mellom nøyaktighet og 8GB minne-limit.
     for img_file in sorted(input_path.iterdir()):
         if img_file.suffix.lower() not in (".jpg", ".jpeg", ".png"):
             continue
         
-        # Hent image_id fra filnavnet (f.eks. img_00042.jpg -> 42)
         try:
-            # Splitter på _ og tar siste del før .jpg
-            parts = img_file.stem.split("_")
-            image_id = int(parts[-1])
+            # Hent image_id (f.eks img_00042.jpg -> 42)
+            image_id = int(img_file.stem.split("_")[-1])
         except (ValueError, IndexError):
             continue
 
-        # 3. Kjør rekognosering (Inference)
-        # Bruker imgsz=1280 for best mulig resultat på små produkter
-        results = model(str(img_file), device=device, imgsz=1280, verbose=False, conf=0.05)
+        # Inference med Half-precision (viktig for L4 GPU og minne)
+        results = model.predict(
+            str(img_file), 
+            device=device, 
+            imgsz=1024, 
+            verbose=False, 
+            conf=0.2,       # Litt lavere threshold for å fange opp flere produkter (score=0.7 på detection)
+            iou=0.45, 
+            half=True
+        )
 
         for r in results:
             if r.boxes is None:
                 continue
             
-            for box in r.boxes:
-                # xyxy er [x1, y1, x2, y2] i piksler
+            # Flytt til CPU for behandling
+            boxes = r.boxes.cpu()
+            
+            for box in boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 w = x2 - x1
                 h = y2 - y1
@@ -63,7 +72,7 @@ def main():
                     "score": round(score, 3)
                 })
 
-    # 4. Lagre resultatene til predictions.json
+    # 3. Lagre resultatene
     output_file = Path(args.output)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
