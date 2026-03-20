@@ -1,29 +1,31 @@
 from ultralytics import YOLO
 
 def start_training():
-    # 1. Last YOLOv8 Large - Bedre balanse mellom kraft og overtilpasning enn Extra Large
-    model = YOLO('yolov8l.pt')
+    # 1. Last YOLOv8 Extra Large - Den kraftigste modellen for 100% poeng
+    # Denne er treig å trene, men den ser flest detaljer
+    model = YOLO('yolov8x.pt')
 
-    # 2. Kjør trening med forbedrede innstillinger
+    # 2. Kjør trening med MAKSIMALE innstillinger for 100% nøyaktighet
     model.train(
         data='data.yaml',      
-        epochs=100,            
-        imgsz=1024,            # 1024 er ofte "sweet spot" for disse hyllebildene (1280 kan gi minneproblemer på 8GB RAM senere)
-        batch=-1,              
+        epochs=150,            # Flere runder for å være helt sikker på at den lærer alt
+        imgsz=1280,            # Høyeste oppløsning for å se bittesmå strekkoder/tekst
+        batch=-1,              # Auto-batch: Bruker alt VRAM den finner
         device=0,              
-        patience=25,           # Litt høyere tålmodighet
+        patience=30,           # Stopper ikke før den er helt ferdigutlært
         save=True,             
         optimizer='AdamW',     
-        lr0=0.01,              # Standard start-læringsrate
-        lrf=0.01,              # Slutt-læringsrate (1% av start)
+        lr0=0.01,              
+        lrf=0.01,              
         augment=True,          
         mosaic=1.0,            
-        mixup=0.2,             # Økt mixup for å hjelpe på sjeldne produkter
-        copy_paste=0.1,        # Legger til copy-paste for å trene på flere objekter
-        scale=0.5,             # Hjelper med å detektere produkter i ulik avstand
+        mixup=0.3,             # Hjelper modellen å generalisere på få bilder
+        copy_paste=0.2,        # Genialt for å trene på objekter som overlapper
+        scale=0.5,             
+        degrees=15.0,          # Takler skjeve bilder i hyllene
         project='NM_AI_Project',
-        name='v8l_optimized',
-        close_mosaic=20        # Skru av mosaic de siste 20 epokene for å "finpusse" boksene
+        name='v8x_prestige_100',
+        close_mosaic=15        # De siste 15 rundene brukes til å finjustere boksene
     )
 
 if __name__ == "__main__":

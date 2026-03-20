@@ -10,13 +10,10 @@ def main():
     parser.add_argument("--output", required=True, help="Sti til predictions.json")
     args = parser.parse_args()
 
-    # 1. Last modellen
+    # 1. Last modellen (leter etter best.pt først, så fallback til x)
     model_path = Path("best.pt")
     if not model_path.exists():
-        # Fallback til Large eller X hvis best.pt ikke finnes
-        model_path = Path("yolov8l.pt")
-        if not model_path.exists():
-            model_path = Path("yolov8x.pt")
+        model_path = Path("yolov8x.pt")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = YOLO(str(model_path))
@@ -27,34 +24,35 @@ def main():
     if not input_path.exists():
         return
 
-    # 2. Kjør prediksjon
-    # Vi bruker imgsz=1024 for å balansere mellom nøyaktighet og 8GB minne-limit.
+    # 2. Kjør prediksjon med MAKSIMAL nøyaktighet
     for img_file in sorted(input_path.iterdir()):
         if img_file.suffix.lower() not in (".jpg", ".jpeg", ".png"):
             continue
         
         try:
-            # Hent image_id (f.eks img_00042.jpg -> 42)
+            # Henter image_id fra filnavn (img_00042.jpg -> 42)
             image_id = int(img_file.stem.split("_")[-1])
         except (ValueError, IndexError):
             continue
 
-        # Inference med Half-precision (viktig for L4 GPU og minne)
+        # Inference med High Resolution og Half-precision
+        # Vi bruker imgsz=1280 for å matche treningen og finne de minste produktene
         results = model.predict(
             str(img_file), 
             device=device, 
-            imgsz=1024, 
+            imgsz=1280, 
             verbose=False, 
-            conf=0.2,       # Litt lavere threshold for å fange opp flere produkter (score=0.7 på detection)
-            iou=0.45, 
-            half=True
+            conf=0.15,      # Lav threshold for å finne ALLE bokser (viktig for score)
+            iou=0.45,       # Standard NMS threshold
+            half=True,      # Sparer minne på L4 GPU
+            augment=True    # TTA: Sjekker bildet flere ganger (flippet/skalert) for 100% presisjon!
         )
 
         for r in results:
             if r.boxes is None:
                 continue
             
-            # Flytt til CPU for behandling
+            # Behandle på CPU for å unngå minnelekasje på GPU
             boxes = r.boxes.cpu()
             
             for box in boxes:
